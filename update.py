@@ -1,43 +1,37 @@
 import os
 import json
-import base64
+import re
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
-
-# ZoomEye configuration
-ZOOMEYE_API_KEY = os.environ.get("ZOOMEYE_API_KEY")
-SEARCH_QUERY = 'app:"udpxy" +subdivisions:"Sichuan" +isp:"China Telecom"'
 
 # Channels configuration
 with open('channels.json', 'r', encoding='utf-8') as f:
     CHANNELS = json.load(f)
 
-def get_ips():
-    print(f"Searching ZoomEye for: {SEARCH_QUERY}")
-    url = f"https://api.zoomeye.ai/host/search?query={requests.utils.quote(SEARCH_QUERY)}&page=1"
-    headers = {"API-KEY": ZOOMEYE_API_KEY}
-    
+def get_public_ips():
+    print("Fetching dynamic UDPXY IPs from public aggregation pool (Bypassing FOFA)...")
+    url = "https://raw.githubusercontent.com/Guovin/TV/gd/result.txt"
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            print(f"ZoomEye API Error: HTTP {resp.status_code} - {resp.text}")
+            print("Failed to fetch public IP pool.")
             return []
-        data = resp.json()
-        matches = data.get("matches", [])
-        ips = [f"{m['ip']}:{m['portinfo']['port']}" for m in matches]
-        print(f"Found {len(ips)} IPs.")
+        
+        # Extract all unique IP:PORT combinations from the m3u/txt file
+        ip_pattern = re.compile(r"http://(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5})")
+        ips = list(set(ip_pattern.findall(resp.text)))
+        print(f"Extracted {len(ips)} potential UDPXY IPs from public pool.")
         return ips
     except Exception as e:
-        print(f"Failed to query ZoomEye: {e}")
+        print(f"Error fetching IPs: {e}")
         return []
 
 def test_ip(ip):
-    # Test a common multicast address to see if udpxy works and returns TS stream
+    # Test our specific Sichuan Telecom multicast address to verify if the IP belongs to Sichuan Telecom
     test_url = f"http://{ip}/udp/239.93.0.58:5140"
     start_time = time.time()
     try:
-        # Request stream for 2 seconds to check throughput
         resp = requests.get(test_url, stream=True, timeout=3)
         if resp.status_code == 200:
             bytes_received = 0
@@ -46,27 +40,24 @@ def test_ip(ip):
                 if time.time() - start_time > 2.0:
                     break
             
-            # If we received more than 100KB in 2 seconds, it's fairly fast
-            if bytes_received > 100 * 1024:
-                print(f"[OK] {ip} (Speed: {bytes_received/1024:.2f} KB/2s)")
+            # If we received > 50KB in 2 seconds, it's a valid Sichuan Telecom IP!
+            if bytes_received > 50 * 1024:
+                print(f"[OK] Sichuan Telecom IP Found: {ip} (Speed: {bytes_received/1024:.2f} KB/2s)")
                 return ip
     except Exception:
         pass
     return None
 
 def main():
-    if not ZOOMEYE_API_KEY:
-        print("Error: ZOOMEYE_API_KEY environment variable is required.")
-        exit(1)
-        
-    ips = get_ips()
+    ips = get_public_ips()
     if not ips:
         print("No IPs found. Exiting.")
         exit(1)
         
-    print("Testing IPs for speed and stability...")
+    print("Testing IPs for Sichuan Telecom multicast access and stability...")
     valid_ips = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # Test concurrently to find matching IPs fast
+    with ThreadPoolExecutor(max_workers=20) as executor:
         results = executor.map(test_ip, ips)
         for res in results:
             if res:
@@ -75,7 +66,7 @@ def main():
                     break
                     
     if not valid_ips:
-        print("No stable IPs found.")
+        print("No stable Sichuan Telecom IPs found in today's pool.")
         exit(1)
         
     print(f"Selected Top IPs: {valid_ips}")
