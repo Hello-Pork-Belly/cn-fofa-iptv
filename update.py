@@ -15,7 +15,7 @@ with open('channels.json', 'r', encoding='utf-8') as f:
 
 def get_ips():
     print(f"Searching ZoomEye for: {SEARCH_QUERY}")
-    url = f"https://api.zoomeye.hk/host/search?query={requests.utils.quote(SEARCH_QUERY)}&page=1"
+    url = f"https://api.zoomeye.ai/host/search?query={requests.utils.quote(SEARCH_QUERY)}&page=1"
     headers = {"API-KEY": ZOOMEYE_API_KEY}
     
     try:
