@@ -11,7 +11,7 @@ with open('channels.json', 'r', encoding='utf-8') as f:
 
 def get_public_ips():
     print("Fetching dynamic UDPXY IPs from public aggregation pool (Bypassing FOFA)...")
-    url = "https://raw.githubusercontent.com/Guovin/TV/gd/result.txt"
+    url = "https://raw.githubusercontent.com/yuanzl77/IPTV/main/live.txt"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
