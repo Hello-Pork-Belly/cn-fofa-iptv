@@ -1,38 +1,46 @@
 import os
-import json
 import re
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
-# Channels configuration
-with open('channels.json', 'r', encoding='utf-8') as f:
-    CHANNELS = json.load(f)
+# Target channels
+TARGET_CHANNELS = [
+    "CCTV-1", "CCTV-2", "CCTV-3", "CCTV-4", "CCTV-5", "CCTV-5+", 
+    "CCTV-6", "CCTV-7", "CCTV-8", "CCTV-9", "CCTV-10", "CCTV-11", 
+    "CCTV-12", "CCTV-13", "CCTV-14", "CCTV-15", "CCTV-16", "CCTV-17",
+    "CCTV-4K"
+]
 
-def get_public_ips():
-    print("Fetching dynamic UDPXY IPs from public aggregation pool (Bypassing FOFA)...")
+def get_cctv_streams():
+    print("Fetching dynamic CCTV streams from public aggregation pool...")
     url = "https://raw.githubusercontent.com/yuanzl77/IPTV/main/live.txt"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
             print("Failed to fetch public IP pool.")
-            return []
-        
-        # Extract all unique IP:PORT combinations from the m3u/txt file
-        ip_pattern = re.compile(r"http://(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5})")
-        ips = list(set(ip_pattern.findall(resp.text)))
-        print(f"Extracted {len(ips)} potential UDPXY IPs from public pool.")
-        return ips
+            return {}
+            
+        streams = defaultdict(list)
+        for line in resp.text.splitlines():
+            if "," not in line:
+                continue
+            name, link = line.split(",", 1)
+            name = name.strip().replace("高清", "").replace(" ", "")
+            if name in TARGET_CHANNELS and link.startswith("http"):
+                streams[name].append(link.strip())
+                
+        print(f"Extracted streams for {len(streams)} CCTV channels.")
+        return streams
     except Exception as e:
         print(f"Error fetching IPs: {e}")
-        return []
+        return {}
 
-def test_ip(ip):
-    # Test our specific Sichuan Telecom multicast address to verify if the IP belongs to Sichuan Telecom
-    test_url = f"http://{ip}/udp/239.93.0.58:5140"
+def test_stream(link):
     start_time = time.time()
     try:
-        resp = requests.get(test_url, stream=True, timeout=3)
+        resp = requests.get(link, stream=True, timeout=3)
         if resp.status_code == 200:
             bytes_received = 0
             for chunk in resp.iter_content(chunk_size=1024):
@@ -40,44 +48,41 @@ def test_ip(ip):
                 if time.time() - start_time > 2.0:
                     break
             
-            # If we received > 50KB in 2 seconds, it's a valid Sichuan Telecom IP!
+            # If we received > 50KB in 2 seconds, it's valid
             if bytes_received > 50 * 1024:
-                print(f"[OK] Sichuan Telecom IP Found: {ip} (Speed: {bytes_received/1024:.2f} KB/2s)")
-                return ip
+                return link, bytes_received
     except Exception:
         pass
-    return None
+    return link, -1
 
 def main():
-    ips = get_public_ips()
-    if not ips:
-        print("No IPs found. Exiting.")
+    streams = get_cctv_streams()
+    if not streams:
+        print("No streams found. Exiting.")
         exit(1)
         
-    print("Testing IPs for Sichuan Telecom multicast access and stability...")
-    valid_ips = []
-    # Test concurrently to find matching IPs fast
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        results = executor.map(test_ip, ips)
-        for res in results:
-            if res:
-                valid_ips.append(res)
-                if len(valid_ips) >= 3:
-                    break
-                    
-    if not valid_ips:
-        print("No stable Sichuan Telecom IPs found in today's pool.")
-        exit(1)
-        
-    print(f"Selected Top IPs: {valid_ips}")
+    print("Testing streams for speed and stability...")
+    best_streams = defaultdict(list)
     
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        for channel, links in streams.items():
+            # Test up to 15 links per channel to save time
+            results = list(executor.map(test_stream, links[:15]))
+            # Filter and sort by speed descending
+            valid_results = [(link, speed) for link, speed in results if speed > 0]
+            valid_results.sort(key=lambda x: x[1], reverse=True)
+            
+            # Keep top 3 fastest
+            best_streams[channel] = [r[0] for r in valid_results[:3]]
+            print(f"{channel}: Found {len(best_streams[channel])} fast streams.")
+            
     print("Generating M3U file...")
     with open('cctv_live.m3u', 'w', encoding='utf-8') as f:
         f.write("#EXTM3U\n")
-        for channel_name, multicast_addr in CHANNELS.items():
-            for ip in valid_ips:
-                f.write(f"#EXTINF:-1 tvg-name=\"{channel_name}\",{channel_name}\n")
-                f.write(f"http://{ip}/udp/{multicast_addr}\n")
+        for channel in TARGET_CHANNELS:
+            for link in best_streams.get(channel, []):
+                f.write(f"#EXTINF:-1 tvg-name=\"{channel}\",{channel}\n")
+                f.write(f"{link}\n")
                 
     print("Successfully generated cctv_live.m3u")
 
