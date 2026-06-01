@@ -26,9 +26,9 @@ jobs:
 
       - name: Run Update Script
         env:
-          ZOOMEYE_API_KEY: ${{ secrets.ZOOMEYE_API_KEY }}
-        run: |
-          python update.py
+          FOFA_EMAIL: ${{ secrets.FOFA_EMAIL }}
+          FOFA_KEY: ${{ secrets.FOFA_KEY }}
+        run: python update.py
 
       - name: Commit and Push changes
         run: |
