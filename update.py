@@ -5,32 +5,31 @@ import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-# FOFA configuration
-FOFA_EMAIL = os.environ.get("FOFA_EMAIL")
-FOFA_API_KEY = os.environ.get("FOFA_API_KEY")
-SEARCH_QUERY = '"udpxy" && region="Sichuan" && org="China Telecom"'
+# ZoomEye configuration
+ZOOMEYE_API_KEY = os.environ.get("ZOOMEYE_API_KEY")
+SEARCH_QUERY = 'app:"udpxy" +subdivisions:"Sichuan" +isp:"China Telecom"'
 
 # Channels configuration
 with open('channels.json', 'r', encoding='utf-8') as f:
     CHANNELS = json.load(f)
 
-def get_fofa_ips():
-    print(f"Searching FOFA for: {SEARCH_QUERY}")
-    qbase64 = base64.b64encode(SEARCH_QUERY.encode()).decode()
-    url = f"https://fofa.info/api/v1/search/all?email={FOFA_EMAIL}&key={FOFA_API_KEY}&qbase64={qbase64}&size=50"
+def get_ips():
+    print(f"Searching ZoomEye for: {SEARCH_QUERY}")
+    url = f"https://api.zoomeye.org/host/search?query={requests.utils.quote(SEARCH_QUERY)}&page=1"
+    headers = {"API-KEY": ZOOMEYE_API_KEY}
     
     try:
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        if data.get("error"):
-            print(f"FOFA API Error: {data.get('errmsg')}")
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            print(f"ZoomEye API Error: HTTP {resp.status_code} - {resp.text}")
             return []
-        results = data.get("results", [])
-        ips = [f"{r[0]}:{r[1]}" for r in results]
+        data = resp.json()
+        matches = data.get("matches", [])
+        ips = [f"{m['ip']}:{m['portinfo']['port']}" for m in matches]
         print(f"Found {len(ips)} IPs.")
         return ips
     except Exception as e:
-        print(f"Failed to query FOFA: {e}")
+        print(f"Failed to query ZoomEye: {e}")
         return []
 
 def test_ip(ip):
@@ -56,11 +55,11 @@ def test_ip(ip):
     return None
 
 def main():
-    if not FOFA_EMAIL or not FOFA_API_KEY:
-        print("Error: FOFA_EMAIL and FOFA_API_KEY environment variables are required.")
+    if not ZOOMEYE_API_KEY:
+        print("Error: ZOOMEYE_API_KEY environment variable is required.")
         exit(1)
         
-    ips = get_fofa_ips()
+    ips = get_ips()
     if not ips:
         print("No IPs found. Exiting.")
         exit(1)

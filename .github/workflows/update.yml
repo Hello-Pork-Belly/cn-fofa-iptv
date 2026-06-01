@@ -21,10 +21,9 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run FOFA Update Script
+      - name: Run Update Script
         env:
-          FOFA_EMAIL: ${{ secrets.FOFA_EMAIL }}
-          FOFA_API_KEY: ${{ secrets.FOFA_API_KEY }}
+          ZOOMEYE_API_KEY: ${{ secrets.ZOOMEYE_API_KEY }}
         run: |
           python update.py
 
